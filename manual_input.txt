@@ -1,0 +1,21 @@
+# manual_input.txt — The Rockland Navigator
+#
+# Add story tips, community announcements, events, or corrections here.
+# The AI curator will incorporate this content into the next newsletter.
+#
+# FORMAT: Start each item with a keyword prefix followed by a colon.
+# Supported prefixes: STORY, EVENT, TIP, NOTE, ITEM, ALERT, UPDATE
+#
+# EXAMPLES:
+#   STORY: The Nyack Farmers Market opens for the season on April 5th at Memorial Park.
+#   EVENT: Clarkstown Town Board meeting, Monday March 24 at 7pm, Town Hall.
+#   TIP: Route 9W closure between Piermont and Grand View begins Monday for 3 weeks.
+#   ALERT: Spring Valley water main break on Main Street — boil water advisory in effect.
+#
+# Lines starting with # are ignored.
+# Clear this file after each newsletter run if you don't want items repeated.
+#
+# ─────────────────────────────────────────────────────────
+# Add your items below this line:
+# ─────────────────────────────────────────────────────────
+

@@ -1,0 +1,24 @@
+# Rockland Navigator Configuration — EXAMPLE FILE
+# Copy this to config.yaml and fill in your real values.
+# DO NOT commit config.yaml to git — it contains secrets.
+
+anthropic:
+  api_key: YOUR_ANTHROPIC_API_KEY
+
+beehiiv:
+  api_key: YOUR_BEEHIIV_API_KEY
+  publication_id: YOUR_PUBLICATION_ID
+
+email:
+  smtp_server: smtp.gmail.com
+  smtp_port: 587
+  sender: your_gmail@gmail.com
+  app_password: "xxxx xxxx xxxx xxxx"
+  preview_recipient: your_gmail@gmail.com
+
+approval:
+  port: 8765
+
+logging:
+  level: INFO
+  file: rockland_navigator.log

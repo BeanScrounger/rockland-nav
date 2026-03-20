@@ -1,0 +1,35 @@
+newsletter:
+  name: "The Rockland Navigator"
+  tagline: "Your hyperlocal guide to Rockland County, NY"
+  target_word_count: 800
+  publish_days: ["Tuesday", "Friday"]
+
+sections:
+  - name: "Top Stories"
+    description: "The 2-3 most important local news stories this week"
+    word_count: 250
+    source_priority: ["rockland_report", "daily_voice", "lohud", "rockland_times"]
+
+  - name: "Government & Politics"
+    description: "County government, town boards, local elections, policy news"
+    word_count: 150
+    source_priority: ["county_gov", "orangetown", "clarkstown", "ramapo"]
+
+  - name: "Community & Events"
+    description: "Upcoming events, community happenings, local organizations"
+    word_count: 150
+    source_priority: ["nyack_news", "monsey_scoop", "reddit", "manual"]
+
+  - name: "Quick Hits"
+    description: "5 brief bullets on other notable local stories"
+    format: "bullets"
+    count: 5
+    word_count: 100
+
+  - name: "Things You Need to Know"
+    description: "Practical info: upcoming events, reminders, police blotter"
+    word_count: 100
+    subsections:
+      - "Upcoming Events"
+      - "Police Blotter"
+      - "Reminders"
