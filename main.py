@@ -1,37 +1,45 @@
 #!/usr/bin/env python3
 """
-The Rockland Navigator — Main Pipeline
+The Rockland Navigator — Newsletter Automation System
+Main entry point. Runs the full pipeline: scrape → deduplicate → draft → preview → approve → publish.
 
 Usage:
-    python main.py            # Full run: scrape → draft → email → approve → publish
-    python main.py --dry-run  # Print draft only; skip email, approval, and publish
+    python main.py              # Full run (scrape, draft, email, approve, publish)
+    python main.py --dry-run    # Generate newsletter only, no email or publishing
 """
+
+import certifi
+import os
+os.environ['SSL_CERT_FILE'] = certifi.where()
+os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()
 
 import argparse
 import logging
-import os
 import sys
-from datetime import datetime
-
 import yaml
+from datetime import datetime
+from pathlib import Path
 
-# ─────────────────────────────────────────────
-# Paths
-# ─────────────────────────────────────────────
-HERE = os.path.dirname(os.path.abspath(__file__))
-CONFIG_PATH = os.path.join(HERE, "config.yaml")
-TEMPLATE_PATH = os.path.join(HERE, "newsletter_template.yaml")
+# ── Setup paths ──────────────────────────────────────────────────────────────
+BASE_DIR = Path(__file__).parent
+OUTPUT_DIR = BASE_DIR / "output"
+OUTPUT_DIR.mkdir(exist_ok=True)
+
+CONFIG_FILE = BASE_DIR / "config.yaml"
 
 
-# ─────────────────────────────────────────────
-# Logging setup
-# ─────────────────────────────────────────────
-def setup_logging(log_level: str = "INFO", log_file: str = "rockland_navigator.log"):
-    level = getattr(logging, log_level.upper(), logging.INFO)
+def setup_logging(config: dict):
+    """Configure logging to both console and file."""
+    log_config = config.get("logging", {})
+    level_str = log_config.get("level", "INFO").upper()
+    level = getattr(logging, level_str, logging.INFO)
+    log_file = BASE_DIR / log_config.get("file", "navigator.log")
+
     handlers = [
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler(os.path.join(HERE, log_file), encoding="utf-8"),
+        logging.FileHandler(log_file, encoding="utf-8"),
     ]
+
     logging.basicConfig(
         level=level,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -40,161 +48,213 @@ def setup_logging(log_level: str = "INFO", log_file: str = "rockland_navigator.l
     )
 
 
-# ─────────────────────────────────────────────
-# Config loader
-# ─────────────────────────────────────────────
-def load_config(path: str = CONFIG_PATH) -> dict:
-    if not os.path.exists(path):
-        print(
-            f"ERROR: config.yaml not found at {path}\n"
-            "Copy config.yaml.example to config.yaml and fill in your credentials."
-        )
+def load_config() -> dict:
+    try:
+        with open(CONFIG_FILE, "r") as f:
+            return yaml.safe_load(f)
+    except FileNotFoundError:
+        print(f"ERROR: config.yaml not found at {CONFIG_FILE}")
+        print("Please copy config.yaml and fill in your API keys.")
         sys.exit(1)
-    with open(path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        print(f"ERROR: Invalid YAML in config.yaml: {e}")
+        sys.exit(1)
 
 
-def load_template(path: str = TEMPLATE_PATH) -> dict:
-    with open(path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+def run_scrapers() -> list:
+    """Run all scrapers and return combined story list."""
+    from scrapers.rss_scraper import fetch_all_rss
+    from scrapers.reddit_scraper import fetch_reddit
+    from scrapers.html_scraper import fetch_all_html
+    from scrapers.manual_scraper import fetch_manual
 
-
-# ─────────────────────────────────────────────
-# Main pipeline
-# ─────────────────────────────────────────────
-def main(dry_run: bool = False):
-    # 1. Load config
-    config = load_config()
-    template = load_template()
-
-    setup_logging(
-        log_level=config.get("logging", {}).get("level", "INFO"),
-        log_file=config.get("logging", {}).get("file", "rockland_navigator.log"),
-    )
     logger = logging.getLogger("main")
+    all_stories = []
 
-    edition_date = datetime.now().strftime("%B %-d, %Y")
-    logger.info(f"{'='*60}")
-    logger.info(f"The Rockland Navigator — {edition_date}")
-    logger.info(f"Mode: {'DRY RUN' if dry_run else 'FULL RUN'}")
-    logger.info(f"{'='*60}")
+    logger.info("=" * 50)
+    logger.info("STEP 1: Scraping all sources")
+    logger.info("=" * 50)
 
-    # 2. Scrape all sources
-    logger.info("Step 1/7: Scraping news sources...")
-    from scrapers.rss_scraper import scrape_rss_feeds
-    from scrapers.reddit_scraper import scrape_reddit
-    from scrapers.html_scraper import scrape_html_sources
-    from scrapers.manual_scraper import scrape_manual_input
+    # RSS feeds
+    rss_stories = fetch_all_rss()
+    logger.info(f"RSS feeds: {len(rss_stories)} stories")
+    all_stories.extend(rss_stories)
 
-    rss_stories = scrape_rss_feeds()
-    reddit_stories = scrape_reddit()
-    html_stories = scrape_html_sources()
-    manual_stories = scrape_manual_input()
+    # Reddit
+    reddit_stories = fetch_reddit()
+    logger.info(f"Reddit: {len(reddit_stories)} stories")
+    all_stories.extend(reddit_stories)
 
-    # 3. Combine all stories
-    all_stories = rss_stories + reddit_stories + html_stories + manual_stories
-    logger.info(
-        f"Scraping complete: {len(all_stories)} total stories "
-        f"(RSS: {len(rss_stories)}, Reddit: {len(reddit_stories)}, "
-        f"HTML: {len(html_stories)}, Manual: {len(manual_stories)})"
-    )
+    # HTML sources
+    html_stories = fetch_all_html()
+    logger.info(f"HTML scraping: {len(html_stories)} stories")
+    all_stories.extend(html_stories)
+
+    # Manual input
+    manual_stories = fetch_manual()
+    if manual_stories:
+        logger.info(f"Manual input: {len(manual_stories)} item(s)")
+    all_stories.extend(manual_stories)
+
+    logger.info(f"TOTAL SCRAPED: {len(all_stories)} raw stories")
+    return all_stories
+
+
+def run_pipeline(dry_run: bool = False, select: bool = False):
+    """Run the full newsletter pipeline."""
+    logger = logging.getLogger("main")
+    date_str = datetime.now().strftime("%B %d, %Y")
+
+    print("\n" + "🗺️ " * 10)
+    print("  THE ROCKLAND NAVIGATOR — Newsletter Automation")
+    print("🗺️ " * 10 + "\n")
+
+    # ── Step 1: Scrape ────────────────────────────────────────────────────────
+    all_stories = run_scrapers()
 
     if not all_stories:
-        logger.warning(
-            "No stories were scraped from any source. "
-            "Check your internet connection or add content to manual_input.txt."
-        )
-
-    # 4. Deduplicate
-    logger.info("Step 2/7: Deduplicating stories...")
-    from deduplicator import deduplicate
-    stories = deduplicate(all_stories)
-
-    # 5. Curate (AI draft)
-    logger.info("Step 3/7: Drafting newsletter with Claude AI...")
-    anthropic_key = config.get("anthropic", {}).get("api_key", "")
-    if not anthropic_key or anthropic_key == "YOUR_ANTHROPIC_API_KEY":
-        logger.error(
-            "Anthropic API key is not set. "
-            "Add your key to config.yaml under anthropic.api_key"
-        )
+        logger.error("No stories found from any source. Exiting.")
+        print("\n⚠️  No stories were found. Check your internet connection and try again.")
         sys.exit(1)
 
-    from curator import curate_newsletter
-    draft_text = curate_newsletter(stories, api_key=anthropic_key)
+    # ── Step 2: Deduplicate ───────────────────────────────────────────────────
+    logger.info("=" * 50)
+    logger.info("STEP 2: Deduplicating stories")
+    logger.info("=" * 50)
 
-    # 6. Format as HTML
-    logger.info("Step 4/7: Formatting newsletter as HTML...")
-    from formatter import format_newsletter
-    html_content = format_newsletter(draft_text, edition_date=edition_date)
+    from deduplicator import deduplicate
+    unique_stories = deduplicate(all_stories)
+    logger.info(f"After deduplication: {len(unique_stories)} unique stories")
 
-    # ── DRY RUN: stop here ──
+    # ── Step 2b: Story selection (optional) ──────────────────────────────────
+    if select:
+        logger.info("=" * 50)
+        logger.info("STEP 2b: Story selection")
+        logger.info("=" * 50)
+        from story_selector import select_stories
+        unique_stories = select_stories(unique_stories)
+        logger.info(f"Stories after selection: {len(unique_stories)}")
+        if not unique_stories:
+            print("\n⚠️  No stories selected. Exiting.")
+            sys.exit(0)
+
+    # ── Step 3: Generate newsletter with Claude ───────────────────────────────
+    logger.info("=" * 50)
+    logger.info("STEP 3: Generating newsletter with Claude AI")
+    logger.info("=" * 50)
+
+    from curator import generate_newsletter
+    try:
+        raw_html = generate_newsletter(unique_stories)
+    except ValueError as e:
+        logger.error(str(e))
+        print(f"\n❌ Configuration error: {e}")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"Error generating newsletter: {e}")
+        print(f"\n❌ Failed to generate newsletter: {e}")
+        sys.exit(1)
+
+    # ── Step 4: Format HTML ───────────────────────────────────────────────────
+    logger.info("=" * 50)
+    logger.info("STEP 4: Formatting newsletter HTML")
+    logger.info("=" * 50)
+
+    from formatter import format_email
+    full_html = format_email(raw_html, date_str)
+
+    # Save to output directory
+    output_file = OUTPUT_DIR / "latest_newsletter.html"
+    output_file.write_text(full_html, encoding="utf-8")
+    logger.info(f"Newsletter saved to: {output_file}")
+    print(f"\n📄 Newsletter HTML saved to: {output_file}")
+
+    # ── Dry run: stop here ────────────────────────────────────────────────────
     if dry_run:
-        print("\n" + "=" * 60)
-        print("  DRY RUN — Newsletter Draft")
-        print("=" * 60)
-        print(draft_text)
-        print("\n" + "=" * 60)
-        print("  Dry run complete. No email sent, nothing published.")
-        print("=" * 60 + "\n")
+        logger.info("Dry run complete. No email sent, nothing published.")
+        print("\n✅ Dry run complete!")
+        print(f"   Open {output_file} in your browser to preview the newsletter.")
+        print("   Run without --dry-run to send email and publish.\n")
         return
 
-    # 7. Send preview email
-    logger.info("Step 5/7: Sending preview email...")
-    from email_sender import send_preview_email
-    email_sent = send_preview_email(
-        html_content=html_content,
-        email_config=config.get("email", {}),
-        edition_date=edition_date,
-    )
-    if not email_sent:
-        logger.warning(
-            "Preview email failed — continuing to approval server anyway. "
-            "Review the draft in the browser window."
-        )
+    # ── Step 5: Send email preview ────────────────────────────────────────────
+    logger.info("=" * 50)
+    logger.info("STEP 5: Sending email preview")
+    logger.info("=" * 50)
 
-    # 8. Start approval server
-    logger.info("Step 6/7: Opening approval server...")
-    from approval_server import run_approval_server
-    port = config.get("approval", {}).get("port", 8765)
-    approved = run_approval_server(html_content, port=port)
-
-    # 9. Handle decision
-    if approved:
-        logger.info("Step 7/7: Publishing to Beehiiv...")
-        from publisher import publish_to_beehiiv
-        success = publish_to_beehiiv(
-            html_content=html_content,
-            beehiiv_config=config.get("beehiiv", {}),
-            edition_date=edition_date,
-        )
-        if success:
-            logger.info("Pipeline complete — newsletter published to Beehiiv as draft.")
-        else:
-            logger.error(
-                "Beehiiv publish failed. Check your credentials and try again."
-            )
-            sys.exit(1)
+    from email_sender import send_preview
+    email_ok = send_preview(full_html, date_str)
+    if email_ok:
+        config = load_config()
+        recipient = config.get("gmail", {}).get("preview_recipient", "your email")
+        print(f"📧 Preview email sent to {recipient}")
     else:
-        print(
-            "\n✗ Newsletter rejected.\n"
-            "  Add notes or extra content to manual_input.txt and re-run:\n"
-            "      python main.py\n"
-        )
-        logger.info("Newsletter rejected by editor. Pipeline stopped.")
+        print("⚠️  Email preview failed (check logs). Continuing to approval server...")
+
+    # ── Step 6: Approval server ───────────────────────────────────────────────
+    logger.info("=" * 50)
+    logger.info("STEP 6: Starting approval server")
+    logger.info("=" * 50)
+
+    from publisher import publish_to_beehiiv
+
+    def on_approve():
+        logger.info("Publishing to Beehiiv...")
+        success = publish_to_beehiiv(full_html, date_str)
+        if not success:
+            logger.error("Publishing to Beehiiv failed. Check logs.")
+
+    from approval_server import run_approval_server
+    approved = run_approval_server(full_html, on_approve_callback=on_approve)
+
+    # ── Result ────────────────────────────────────────────────────────────────
+    if approved:
+        logger.info("Pipeline complete — newsletter approved and published.")
+        print("\n🎉 Done! Newsletter approved and sent to Beehiiv.")
+    else:
+        logger.info("Pipeline complete — newsletter rejected.")
+        print("\n📝 Newsletter rejected.")
+        print("   Add your notes to manual_input.txt and re-run: python main.py")
 
 
-# ─────────────────────────────────────────────
-# Entry point
-# ─────────────────────────────────────────────
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(
-        description="The Rockland Navigator — Newsletter Automation"
+        description="The Rockland Navigator — Newsletter Automation System",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python main.py                       # Full automatic run
+  python main.py --dry-run             # Draft only, no email or publishing
+  python main.py --select              # Pick stories before drafting, then full run
+  python main.py --select --dry-run    # Pick stories, draft only, no email or publishing
+        """,
     )
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Scrape and draft the newsletter without sending email or publishing.",
+        help="Generate newsletter only — no email preview, no publishing to Beehiiv",
+    )
+    parser.add_argument(
+        "--select",
+        action="store_true",
+        help="Open story selector before drafting — choose which scraped articles to include",
     )
     args = parser.parse_args()
-    main(dry_run=args.dry_run)
+
+    config = load_config()
+    setup_logging(config)
+
+    try:
+        run_pipeline(dry_run=args.dry_run, select=args.select)
+    except KeyboardInterrupt:
+        print("\n\nInterrupted by user. Exiting.")
+        sys.exit(0)
+    except Exception as e:
+        logging.getLogger("main").exception(f"Unexpected error: {e}")
+        print(f"\n❌ Unexpected error: {e}")
+        print("Check navigator.log for details.")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
