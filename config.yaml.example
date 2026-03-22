@@ -5,9 +5,10 @@
 anthropic:
   api_key: YOUR_ANTHROPIC_API_KEY
 
-beehiiv:
-  api_key: YOUR_BEEHIIV_API_KEY
-  publication_id: YOUR_PUBLICATION_ID
+ghost:
+  url: https://your-ghost-site.com
+  admin_api_key: YOUR_GHOST_ADMIN_API_KEY
+  # Key format is  id:secret  — find it in Ghost Admin → Settings → Integrations → Add custom integration
 
 email:
   smtp_server: smtp.gmail.com

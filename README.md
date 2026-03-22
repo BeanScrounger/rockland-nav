@@ -1,6 +1,9 @@
-# The Rockland Navigator — Newsletter Automation
+# The Rockland Navigator — Newsletter Automation (Ghost edition)
 
 Automated pipeline for generating, reviewing, and publishing *The Rockland Navigator*, a hyperlocal newsletter covering Rockland County, NY.
+
+> **Branch:** `ghost` — publishes to [Ghost](https://ghost.org) instead of Beehiiv.
+> For the original Beehiiv version, see the `main` branch.
 
 ---
 
@@ -9,10 +12,11 @@ Automated pipeline for generating, reviewing, and publishing *The Rockland Navig
 Every Tuesday and Friday, the system:
 1. Scrapes local news from RSS feeds, Reddit, and town/county websites
 2. Removes duplicate stories
-3. Drafts the newsletter using Claude AI, following your template and voice guide
-4. Emails you an HTML preview
-5. Opens a browser window where you can approve or reject the draft
-6. If approved, publishes the draft to Beehiiv automatically
+3. Optionally opens a browser UI so you can pick which stories to include (`--select`)
+4. Drafts the newsletter using Claude AI, following your template and voice guide
+5. Emails you an HTML preview
+6. Opens a browser window where you can approve or reject the draft
+7. If approved, publishes the draft to Ghost automatically — then opens the Ghost editor so you can review before hitting Publish
 
 ---
 
@@ -22,7 +26,7 @@ Every Tuesday and Friday, the system:
 - **pip** — usually included with Python
 - A **Gmail account** with an App Password (see step 3 below)
 - An **Anthropic account** with an API key (for Claude AI)
-- A **Beehiiv account** with your newsletter publication set up
+- A **Ghost site** — either self-hosted or on [Ghost(Pro)](https://ghost.org/pricing/)
 
 ---
 
@@ -31,6 +35,8 @@ Every Tuesday and Friday, the system:
 Open Terminal, navigate to this folder, and run:
 
 ```bash
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 ```
 
@@ -52,18 +58,17 @@ Open `config.yaml` in any text editor and fill in your values:
 3. Click **Create Key**, give it a name, copy the key
 4. Paste it as the value for `anthropic.api_key`
 
-### Beehiiv Publication ID
-1. Log in to [beehiiv.com](https://www.beehiiv.com)
-2. Open your newsletter publication
-3. Go to **Settings → Publication**
-4. Look at the URL — it will contain something like `/publications/pub_xxxxxxxx`
-5. Copy everything after `/publications/` (e.g. `pub_xxxxxxxx`)
-6. Paste it as the value for `beehiiv.publication_id`
+### Ghost URL + Admin API Key
+1. Log in to your Ghost Admin panel (e.g. `https://yoursite.com/ghost`)
+2. Go to **Settings → Integrations**
+3. Click **Add custom integration** and give it a name (e.g. "Rockland Navigator")
+4. Copy the **Admin API Key** — it looks like `64abc123...:def456...` (id:secret format)
+5. Paste it as `ghost.admin_api_key` in `config.yaml`
+6. Set `ghost.url` to your Ghost site's root URL (e.g. `https://yoursite.com`)
 
 ### Gmail App Password
-If you haven't already set one up:
 1. Go to your Google Account → **Security**
-2. Under "How you sign in to Google," click **2-Step Verification** (must be enabled)
+2. Under "How you sign in to Google," click **2-Step Verification** (must be enabled first)
 3. Scroll to the bottom and click **App passwords**
 4. Create a new app password for "Mail"
 5. Copy the 16-character password (with spaces) into `email.app_password`
@@ -78,68 +83,70 @@ Test everything without sending email or publishing:
 python main.py --dry-run
 ```
 
-This will scrape stories, draft the newsletter, and print the result to the terminal. No emails sent, nothing published.
+Scrapes stories, drafts the newsletter with Claude, and saves the HTML. No emails sent, nothing published.
 
 ---
 
 ## 4. Full Run
 
-To run the full pipeline — scrape, draft, email preview, approve, and publish:
-
 ```bash
 python main.py
 ```
 
-A browser window will open showing the draft. Click **Approve & Publish** to post to Beehiiv, or **Reject** to cancel. If you reject, add notes or extra content to `manual_input.txt` and run again.
+A browser window opens showing the draft. Click **Approve & Publish** to post to Ghost as a draft, or **Reject** to cancel. After approving, Ghost editor opens automatically so you can review and hit Publish when ready.
 
 ---
 
-## 5. Auto-Scheduling
+## 5. Selecting Stories Manually
 
-To have the newsletter run automatically every Tuesday and Friday at 7 AM, leave this running in the background:
+When you want editorial control over which scraped articles Claude uses:
+
+```bash
+python main.py --select
+```
+
+Opens a browser UI showing all ~100 scraped articles grouped by source with checkboxes. Uncheck anything irrelevant, click **Continue**, and Claude drafts from only your selection. Combine with `--dry-run` to preview without publishing:
+
+```bash
+python main.py --select --dry-run
+```
+
+---
+
+## 6. Auto-Scheduling
+
+To run automatically every Tuesday and Friday at 7 AM:
 
 ```bash
 python scheduler.py
 ```
 
-Keep the Terminal window open (or run it as a background process). It will trigger `main.py` at the configured times.
+Keep the Terminal window open. It triggers `main.py` at the configured times.
 
 ---
 
-## 6. Customizing the Newsletter Format
+## 7. Customizing the Newsletter Format
 
-Edit `newsletter_template.yaml` to change:
-- Section names and descriptions
-- Word counts per section
-- Which sources are prioritized for each section
-- Publishing days
-
-After editing, the AI will follow the new structure on the next run.
+Edit `newsletter_template.yaml` to change section names, word counts, source priorities, and publishing days. Changes take effect on the next run.
 
 ---
 
-## 7. Customizing the AI Voice
+## 8. Customizing the AI Voice
 
-Edit `system_prompt.txt` to adjust:
-- Tone and writing style
-- Editorial priorities
-- Formatting preferences
-
-The AI reads this file on every run, so changes take effect immediately.
+Edit `system_prompt.txt` to adjust tone, editorial priorities, and formatting preferences. The AI reads this file on every run.
 
 ---
 
-## 8. Adding Manual Content
+## 9. Adding Manual Content
 
-Paste any content into `manual_input.txt` — story tips, community announcements, events, corrections. The curator will incorporate this into the newsletter alongside scraped content.
+Paste story tips, events, or corrections into `manual_input.txt` before running:
 
-Format example:
 ```
 STORY: The Nyack Farmers Market opens for the season on April 5th at Memorial Park.
 EVENT: Clarkstown Town Board meeting, Monday March 24 at 7pm, Town Hall.
 ```
 
-Clear the file after each run if you don't want the same content repeated.
+Clear the file after each run if you don't want items repeated.
 
 ---
 
@@ -153,7 +160,9 @@ Clear the file after each run if you don't want the same content repeated.
 | `system_prompt.txt` | AI voice and editorial guidelines |
 | `manual_input.txt` | Add tips and extra content here |
 | `main.py` | Run this to generate a newsletter |
-| `scheduler.py` | Run this to auto-schedule Tuesday/Friday runs |
+| `story_selector.py` | Browser UI for picking stories (used with `--select`) |
+| `publisher.py` | Ghost Admin API integration |
+| `scheduler.py` | Auto-schedules Tuesday/Friday runs |
 
 ---
 
@@ -161,8 +170,16 @@ Clear the file after each run if you don't want the same content repeated.
 
 **"Authentication failed" on email send:** Double-check your Gmail App Password in `config.yaml`. Make sure 2-Step Verification is enabled on your Google account.
 
-**Scraper returns no stories:** Some local news sites may block scrapers or change their RSS URLs. Check the URLs in `scrapers/rss_scraper.py` are still valid.
+**Ghost API returns 401:** Your Admin API key is wrong or expired. Regenerate it in Ghost Admin → Settings → Integrations.
 
-**Beehiiv publish fails:** Confirm your `publication_id` is correct — it should look like `pub_xxxxxxxx`. Check the Beehiiv API key hasn't expired.
+**Ghost API returns 404:** Your `ghost.url` in `config.yaml` is incorrect. It should be the root of your site (e.g. `https://yoursite.com`), not the Ghost admin URL.
 
-**AI draft is poor quality:** Add more context in `manual_input.txt`, adjust `system_prompt.txt`, or run with `--dry-run` to see what stories were collected.
+**Scraper returns no stories:** Some local news sites block scrapers or change their RSS URLs. Check the URLs in `scrapers/rss_scraper.py` are still valid. Add stories manually via `manual_input.txt`.
+
+**AI draft is poor quality:** Add more context in `manual_input.txt`, adjust `system_prompt.txt`, or use `--select` to manually choose the best stories before drafting.
+
+**SSL certificate errors on RSS feeds:** Run this in your venv to fix: `pip install certifi` then add these two lines at the top of `main.py`:
+```python
+import certifi, os
+os.environ['SSL_CERT_FILE'] = certifi.where()
+```
